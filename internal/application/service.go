@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"radio-observation-release-gate/internal/audit"
@@ -17,17 +16,14 @@ import (
 )
 
 type Service struct {
-	repo                  *storage.Repository
-	clock                 func() time.Time
-	manifestMu            sync.RWMutex
-	manifestVerifications map[string]ManifestVerification
+	repo *storage.Repository
+	clock func() time.Time
 }
 
 func New(repo *storage.Repository) *Service {
 	return &Service{
-		repo:                  repo,
-		clock:                 time.Now,
-		manifestVerifications: map[string]ManifestVerification{},
+		repo: repo,
+		clock: time.Now,
 	}
 }
 
@@ -537,12 +533,6 @@ func (s *Service) Timeline(id string) (TimelineView, error) {
 }
 
 func (s *Service) VerifyManifest(id string) (ManifestVerification, error) {
-	s.manifestMu.RLock()
-	cached, ok := s.manifestVerifications[id]
-	s.manifestMu.RUnlock()
-	if ok {
-		return cached, nil
-	}
 	m, err := s.repo.Manifest(id)
 	if err != nil {
 		return ManifestVerification{}, mapError(err)
@@ -552,9 +542,6 @@ func (s *Service) VerifyManifest(id string) (ManifestVerification, error) {
 		return ManifestVerification{}, err
 	}
 	result := ManifestVerification{BatchID: id, StoredSHA256: m.CanonicalSHA256, RecomputedSHA256: recomputed, Valid: valid}
-	s.manifestMu.Lock()
-	s.manifestVerifications[id] = result
-	s.manifestMu.Unlock()
 	return result, nil
 }
 
