@@ -303,17 +303,11 @@ func (s *Service) RegisterSegments(batchID string, cmd RegisterSegmentsCommand) 
 		}
 		_, e := clone.AddSegmentsAtomic(cmd.Segments, s.clock())
 		if e != nil {
-			var rule *domain.RuleError
-			if errors.As(e, &rule) {
-				index := locateBulkError(e)
-				segmentID := ""
-				if index >= 0 && index < len(cmd.Segments) {
-					segmentID = cmd.Segments[index].SegmentID
-				}
-				errs = append(errs, BulkItemError{InputIndex: index, SegmentID: segmentID, Code: rule.Code, Message: rule.Message})
-			} else {
+			item, ok := bulkItemErrorFromDomain(e, cmd.Segments)
+			if !ok {
 				return nil, mapError(e)
 			}
+			errs = append(errs, item)
 		}
 	}
 	if len(errs) > 0 {
@@ -333,6 +327,33 @@ func (s *Service) RegisterSegments(batchID string, cmd RegisterSegmentsCommand) 
 		return nil, err
 	}
 	return result, nil
+}
+
+// bulkItemErrorFromDomain converts a per-item failure produced by
+// AddSegmentsAtomic into a BulkItemError. AddSegmentsAtomic prefixes every
+// item-level failure with "第 N 项" and, when the failure is a domain rule
+// (via %w), also wraps a *RuleError. Both wrapped and unwrapped failures are
+// mapped to a bulk row so callers receive the same row-based response shape
+// regardless of whether the underlying constraint is a rule or a structural
+// guard (e.g. empty segment id).
+func bulkItemErrorFromDomain(err error, segments []domain.ObservationSegment) (BulkItemError, bool) {
+	index := locateBulkError(err)
+	if index < 0 || index >= len(segments) {
+		return BulkItemError{}, false
+	}
+	item := BulkItemError{InputIndex: index, SegmentID: segments[index].SegmentID}
+	var rule *domain.RuleError
+	if errors.As(err, &rule) {
+		item.Code = rule.Code
+		item.Message = rule.Message
+	} else {
+		item.Code = "segment_invalid"
+		item.Message = strings.TrimSpace(strings.TrimPrefix(err.Error(), fmt.Sprintf("第 %d 项数据段 %s: ", index+1, segments[index].SegmentID)))
+		if item.Message == "" {
+			item.Message = err.Error()
+		}
+	}
+	return item, true
 }
 
 func locateBulkError(err error) int {

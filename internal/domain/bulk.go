@@ -25,22 +25,35 @@ func (b *ObservationBatch) AddSegmentsAtomic(segments []ObservationSegment, now 
 	if b.State != StateFrozen && b.State != StateRemediation && b.State != StateQuality {
 		return nil, rule("segment_registration_locked", "当前状态不允许登记数据段")
 	}
+	// Validate every segment against the existing aggregate and against the
+	// incoming batch without mutating state. A single failure must leave the
+	// aggregate (segments, revision, updated_at) untouched.
+	preview := make(map[string]*ObservationSegment, len(b.Segments)+len(segments))
+	for id, seg := range b.Segments {
+		preview[id] = seg
+	}
+	pending := make([]*ObservationSegment, 0, len(segments))
 	ids := make([]string, 0, len(segments))
 	for i, seg := range segments {
 		if strings.TrimSpace(seg.SegmentID) == "" {
 			return nil, fmt.Errorf("第 %d 项数据段编号不能为空", i+1)
 		}
-		if _, exists := b.Segments[seg.SegmentID]; exists {
+		if _, exists := preview[seg.SegmentID]; exists {
 			return nil, fmt.Errorf("第 %d 项数据段 %s: %w", i+1, seg.SegmentID, rule("segment_id_exists", "数据段编号已存在"))
 		}
-		if err := ValidateSegment(b, seg); err != nil {
+		cp := seg
+		if err := validateSegmentAgainst(b.Baseline, b.BatchID, preview, cp); err != nil {
 			return nil, fmt.Errorf("第 %d 项数据段 %s: %w", i+1, seg.SegmentID, err)
 		}
-		seg.BatchID = b.BatchID
-		seg.Status = SegmentRegistered
-		seg.RegisteredAt = now.UTC()
-		b.Segments[seg.SegmentID] = &seg
+		cp.BatchID = b.BatchID
+		cp.Status = SegmentRegistered
+		cp.RegisteredAt = now.UTC()
+		pending = append(pending, &cp)
+		preview[seg.SegmentID] = &cp
 		ids = append(ids, seg.SegmentID)
+	}
+	for _, cp := range pending {
+		b.Segments[cp.SegmentID] = cp
 	}
 	b.touch(now)
 	return ids, nil

@@ -29,16 +29,23 @@ func ValidateBaseline(v Baseline) error {
 }
 
 func ValidateSegment(b *ObservationBatch, s ObservationSegment) error {
+	return validateSegmentAgainst(b.Baseline, b.BatchID, b.Segments, s)
+}
+
+// validateSegmentAgainst validates s against a candidate segments map without
+// touching the aggregate. It is used by bulk registration to keep the batch
+// untouched until every segment has been validated.
+func validateSegmentAgainst(baseline Baseline, batchID string, segments map[string]*ObservationSegment, s ObservationSegment) error {
 	if !stableIDPattern.MatchString(s.SegmentID) || strings.TrimSpace(s.SubmittedBy) == "" {
 		return rule("segment_identity_required", "数据段编号和录入人员不能为空")
 	}
-	if s.BatchID != "" && s.BatchID != b.BatchID {
+	if s.BatchID != "" && s.BatchID != batchID {
 		return rule("cross_batch_reference", "数据段不能引用其他批次")
 	}
-	if !s.EndTime.After(s.StartTime) || s.StartTime.Before(b.Baseline.PlannedWindow.Start) || s.EndTime.After(b.Baseline.PlannedWindow.End) {
+	if !s.EndTime.After(s.StartTime) || s.StartTime.Before(baseline.PlannedWindow.Start) || s.EndTime.After(baseline.PlannedWindow.End) {
 		return rule("segment_window_invalid", "采集时段必须位于冻结计划时窗内")
 	}
-	if s.FrequencyLowHz < b.Baseline.FrequencyLowHz || s.FrequencyHighHz > b.Baseline.FrequencyHighHz || s.FrequencyHighHz <= s.FrequencyLowHz {
+	if s.FrequencyLowHz < baseline.FrequencyLowHz || s.FrequencyHighHz > baseline.FrequencyHighHz || s.FrequencyHighHz <= s.FrequencyLowHz {
 		return rule("segment_frequency_invalid", "数据段频率必须位于冻结频段内")
 	}
 	if s.ValidDurationSeconds <= 0 || s.ValidDurationSeconds > s.EndTime.Sub(s.StartTime).Seconds() {
@@ -47,7 +54,7 @@ func ValidateSegment(b *ObservationBatch, s ObservationSegment) error {
 	if strings.TrimSpace(s.FileReference) == "" || !validSHA256(s.ContentSHA256) {
 		return rule("segment_evidence_invalid", "文件引用不能为空且内容摘要必须是 SHA-256")
 	}
-	for _, existing := range b.Segments {
+	for _, existing := range segments {
 		if strings.EqualFold(existing.ContentSHA256, s.ContentSHA256) {
 			return rule("duplicate_content_digest", "内容摘要已在当前批次登记")
 		}
@@ -56,7 +63,7 @@ func ValidateSegment(b *ObservationBatch, s ObservationSegment) error {
 		}
 	}
 	if s.ReplacesSegmentID != "" {
-		old, ok := b.Segments[s.ReplacesSegmentID]
+		old, ok := segments[s.ReplacesSegmentID]
 		if !ok || old.Status != SegmentQuarantined {
 			return rule("replacement_target_invalid", "替换目标必须是当前批次已隔离的数据段")
 		}
