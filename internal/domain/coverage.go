@@ -68,7 +68,17 @@ func BuildCoverageReport(b *ObservationBatch) CoverageReport {
 	current.DurationSeconds = current.End.Sub(current.Start).Seconds()
 	report.Intervals = append(report.Intervals, current)
 	for _, interval := range report.Intervals {
-		report.EffectiveSeconds += interval.DurationSeconds
+		sumValid := 0.0
+		for _, id := range interval.SegmentIDs {
+			if seg := b.Segments[id]; seg != nil {
+				sumValid += seg.ValidDurationSeconds
+			}
+		}
+		effective := interval.DurationSeconds
+		if sumValid < effective {
+			effective = sumValid
+		}
+		report.EffectiveSeconds += effective
 	}
 	cursor := b.Baseline.PlannedWindow.Start
 	for _, interval := range report.Intervals {
