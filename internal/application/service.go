@@ -382,6 +382,11 @@ func (s *Service) PreviewReplacement(batchID string, cmd PreviewReplacementComma
 	if b.Revision != cmd.ExpectedRevision {
 		return domain.ReplacementPreview{}, &Error{Code: "stale_revision", Message: fmt.Sprintf("页面修订 %d 已过期，当前修订为 %d", cmd.ExpectedRevision, b.Revision), CurrentRevision: b.Revision, HTTPStatus: 409}
 	}
+	if other, found, err := s.repo.FindContentDigest(cmd.Segment.ContentSHA256, batchID); err != nil {
+		return domain.ReplacementPreview{}, err
+	} else if found {
+		return domain.ReplacementPreview{}, &Error{Code: "cross_batch_digest", Message: "内容摘要已由批次 " + other + " 登记", HTTPStatus: 409}
+	}
 	result, err := domain.PreviewReplacement(b, cmd.IssueID, cmd.Segment, s.clock())
 	if err != nil {
 		return domain.ReplacementPreview{}, mapError(err)
