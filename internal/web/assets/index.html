@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>观测发布资格工作台</title>
+  <link rel="stylesheet" href="/assets/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div><span class="brand-mark">RO</span><strong>观测发布资格工作台</strong></div>
+    <div class="operator"><label for="actor">当前操作人</label><input id="actor" value="operator-01"></div>
+  </header>
+  <div id="notice" class="notice" hidden></div>
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="section-title"><h2>观测批次</h2><button id="refresh" class="icon-button" title="刷新批次">↻</button></div>
+      <form id="create-form" class="compact-form"><label>批次编号<input name="batch_id" required placeholder="OBS-2026-001"></label><button type="submit">新建批次</button></form>
+      <form id="batch-filter" class="compact-form filter-form">
+        <label>批次编号<input name="batch_id" placeholder="批次编号"></label><label>望远镜编号<input name="telescope_id" placeholder="望远镜编号"></label><label>目标源<input name="target_source" placeholder="目标源"></label>
+        <label>批次状态<select name="state"><option value="">全部状态</option><option value="draft">草稿</option><option value="frozen">基线已冻结</option><option value="quality_checked">质检完成</option><option value="remediation">隔离补观</option><option value="under_review">独立抽审</option><option value="approved">批准发布</option><option value="rejected">拒绝封存</option></select></label>
+        <label class="check-label"><input name="todo" type="checkbox">仅看待办</label><div class="filter-actions"><button type="submit">筛选</button><button id="clear-filter" type="button" class="secondary">清空</button></div>
+      </form>
+      <div id="batch-stats" class="batch-stats"></div>
+      <nav id="batch-list" class="batch-list"><p class="empty">暂无批次</p></nav>
+      <div id="batch-pages" class="pagination"></div>
+    </aside>
+    <section class="workspace">
+      <div id="empty-state" class="empty-state"><h1>观测发布资格</h1><p>从左侧新建或选择观测批次。</p></div>
+      <div id="batch-view" hidden>
+        <section class="summary-band">
+          <div><span class="eyebrow">当前批次</span><h1 id="batch-title"></h1></div>
+          <div class="summary-stats"><div><span>状态</span><strong id="batch-state"></strong></div><div><span>修订</span><strong id="batch-revision"></strong></div><div><span>有效覆盖</span><strong id="coverage"></strong></div><div><span>待处理</span><strong id="pending-count"></strong></div></div>
+        </section>
+
+        <div class="tabs" role="tablist">
+          <button class="tab active" data-tab="flow">流程</button><button class="tab" data-tab="timeline">时间线</button><button class="tab" data-tab="manifest">清单校验</button>
+        </div>
+        <div id="tab-flow" class="tab-panel">
+          <section id="baseline-section" class="panel">
+            <div class="section-title"><h2>冻结基线</h2><span id="baseline-badge" class="badge"></span></div>
+            <form id="baseline-form" class="form-grid">
+              <label>望远镜编号<input name="telescope_id" required></label><label>目标源<input name="target_source" required></label>
+              <label>频段名称<input name="frequency_band" required></label><label>频率下限 Hz<input name="frequency_low_hz" type="number" required></label><label>频率上限 Hz<input name="frequency_high_hz" type="number" required></label>
+              <label>计划开始<input name="start" type="datetime-local" required></label><label>计划结束<input name="end" type="datetime-local" required></label><label>最小有效时长 秒<input name="minimum_valid_duration_seconds" type="number" required></label>
+              <label>最大 RFI 占比<input name="max_rfi_occupancy" type="number" min="0" max="1" step="0.01" value="0.2" required></label><label>最低完整率<input name="min_completeness" type="number" min="0" max="1" step="0.01" value="0.95" required></label>
+              <label>最大丢包率<input name="max_packet_loss" type="number" min="0" max="1" step="0.01" value="0.05" required></label><label>最低信噪比<input name="min_signal_to_noise" type="number" step="0.1" value="8" required></label>
+              <label>抽样种子<input name="sampling_seed" required></label><label>样本数<input name="sample_size" type="number" min="1" value="1" required></label>
+              <div class="form-actions"><button type="submit">冻结基线</button></div>
+            </form>
+            <dl id="baseline-readonly" class="detail-grid" hidden></dl>
+          </section>
+
+          <section id="segments-section" class="panel">
+            <div class="section-title"><h2>数据段与质检</h2><div class="heading-actions"><button id="bulk-mode" class="secondary">批量登记</button><button id="assess-batch">整批质检</button><span id="segment-count" class="badge"></span></div></div>
+            <form id="segment-form" class="form-grid">
+              <label>数据段编号<input name="segment_id" required></label><label>文件引用<input name="file_reference" required></label><label class="wide">内容 SHA-256<input name="content_sha256" minlength="64" maxlength="64" required></label>
+              <label>采集开始<input name="start_time" type="datetime-local" required></label><label>采集结束<input name="end_time" type="datetime-local" required></label><label>有效时长 秒<input name="valid_duration_seconds" type="number" required></label>
+              <label>频率下限 Hz<input name="frequency_low_hz" type="number" required></label><label>频率上限 Hz<input name="frequency_high_hz" type="number" required></label><label>替换数据段<input name="replaces_segment_id"></label>
+              <label>RFI 占比<input name="rfi_occupancy" type="number" min="0" max="1" step="0.01" required></label><label>完整率<input name="completeness" type="number" min="0" max="1" step="0.01" required></label><label>丢包率<input name="packet_loss" type="number" min="0" max="1" step="0.01" required></label><label>信噪比<input name="signal_to_noise" type="number" step="0.1" required></label>
+              <div class="form-actions"><button type="submit">登记数据段</button></div>
+            </form>
+            <div id="bulk-panel" class="bulk-panel" hidden><div class="section-title"><h3>批量登记数据段</h3><button id="add-bulk-row" type="button" class="secondary">添加一行</button></div><div id="bulk-rows" class="bulk-rows"></div><div class="form-actions"><button id="submit-bulk" type="button">提交整批</button></div></div>
+            <div class="table-wrap"><table><thead><tr><th>数据段</th><th>采集时段</th><th>有效时长</th><th>质量指标</th><th>状态</th><th></th></tr></thead><tbody id="segments-body"></tbody></table></div>
+          </section>
+
+          <section id="issues-section" class="panel"><div class="section-title"><h2>质检问题队列</h2><span id="issue-count" class="badge"></span></div><div id="issues-list" class="issue-list"></div></section>
+          <section id="reviews-section" class="panel"><div class="section-title"><h2>独立抽审</h2><div><span id="review-progress" class="badge"></span> <button id="generate-review">生成抽审清单</button></div></div><div id="review-stats" class="review-stats"></div><div id="reviews-list" class="review-list"></div><div class="seal-row"><button id="seal-batch">封存终态</button></div></section>
+        </div>
+        <div id="tab-timeline" class="tab-panel" hidden><ol id="timeline-list" class="timeline"></ol></div>
+        <div id="tab-manifest" class="tab-panel" hidden><section class="manifest-view"><div class="section-title"><h2>不可变发布清单</h2><button id="verify-manifest">重新计算摘要</button></div><pre id="manifest-json"></pre><div id="verification-result"></div></section></div>
+      </div>
+    </section>
+  </main>
+  <script src="/assets/app.js" defer></script>
+</body>
+</html>
